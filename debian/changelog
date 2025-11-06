@@ -1,5 +1,158 @@
-template-repository (1.0-1) unstable; urgency=medium
+python-ansible-compat (24.10.0-1) unstable; urgency=medium
 
-  * Initial release
+  * New upstream version 24.10.0
 
- -- Tsic404 <liuheng@deepin.org>  Sat, 28 Jan 2023 13:46:49 +0800
+ -- Josenilson Ferreira da Silva <nilsonfsilva@hotmail.com>  Mon, 23 Dec 2024 20:24:39 -0300
+
+python-ansible-compat (24.9.1-1) unstable; urgency=medium
+
+  * New upstream version 24.9.1
+
+ -- Josenilson Ferreira da Silva <nilsonfsilva@hotmail.com>  Wed, 16 Oct 2024 06:17:00 -0300
+
+python-ansible-compat (24.9.0-1) unstable; urgency=medium
+
+  * New upstream version 24.9.0
+
+ -- Josenilson Ferreira da Silva <nilsonfsilva@hotmail.com>  Wed, 11 Sep 2024 00:10:41 -0300
+
+python-ansible-compat (24.7.0-1) unstable; urgency=medium
+
+  * New upstream version 24.7.0
+
+ -- Josenilson Ferreira da Silva <nilsonfsilva@hotmail.com>  Wed, 07 Aug 2024 21:43:12 -0300
+
+python-ansible-compat (24.6.1-1) unstable; urgency=medium
+
+  * New upstream version 24.6.1
+  * Bug has been resolved (Closes: #1061821, Ubuntu #2052530)
+
+ -- Josenilson Ferreira da Silva <nilsonfsilva@hotmail.com>  Sat, 06 Jul 2024 16:01:02 -0300
+
+python-ansible-compat (24.6.0-1) unstable; urgency=medium
+
+  * New upstream version 24.6.0
+  * debian/control:  Bumped Standards-Version to 4.7.0
+
+ -- Josenilson Ferreira da Silva <nilsonfsilva@hotmail.com>  Thu, 30 May 2024 20:39:03 -0300
+
+python-ansible-compat (24.5.1-1) unstable; urgency=medium
+
+  * New upstream version 24.5.1
+  * debian/watch: Added 'opts=uversionmangle' to not track pre-releases
+
+ -- Josenilson Ferreira da Silva <nilsonfsilva@hotmail.com>  Fri, 17 May 2024 22:04:32 -0300
+
+python-ansible-compat (4.1.12-1) unstable; urgency=medium
+
+  * New upstream version 4.1.12
+  * debian/control: Added suite autopkgtest
+  * debian/patches: Remove unnecessary patches
+  * debian/rules: changed test disable mode
+  * debian/tests: replaced by autopkgtest from debian/control
+
+ -- Josenilson Ferreira da Silva <nilsonfsilva@hotmail.com>  Sat, 06 Apr 2024 08:46:03 -0300
+
+python-ansible-compat (4.1.11-1) unstable; urgency=medium
+
+  * New upstream version 4.1.11
+  * debian/patches: deleted by mistake
+  * debian/patches: re-added and updated
+
+ -- Josenilson Ferreira da Silva <nilsonfsilva@hotmail.com>  Sun, 04 Feb 2024 01:46:50 -0300
+
+python-ansible-compat (4.1.10-1) unstable; urgency=medium
+
+  * New upstream version 4.1.10
+
+ -- Josenilson Ferreira da Silva <nilsonfsilva@hotmail.com>  Thu, 07 Sep 2023 15:33:15 -0300
+
+python-ansible-compat (4.1.8-1) unstable; urgency=medium
+
+  * New upstream version 4.1.8
+  * debian/patches: skip functions in tests with errors
+  * debian/tests: Added autopkgtests
+
+ -- Josenilson Ferreira da Silva <nilsonfsilva@hotmail.com>  Sat, 02 Sep 2023 21:26:04 -0300
+
+python-ansible-compat (4.1.7-1) unstable; urgency=medium
+
+  * New upstream version 4.1.7
+
+ -- Josenilson Ferreira da Silva <nilsonfsilva@hotmail.com>  Wed, 23 Aug 2023 07:00:19 -0300
+
+python-ansible-compat (4.1.5-1) unstable; urgency=medium
+
+  * New upstream version 4.1.5
+  * debian/clean: remove dirt build
+  * debian/copyright: maintainers year update for 2023
+
+ -- Josenilson Ferreira da Silva <nilsonfsilva@hotmail.com>  Wed, 26 Jul 2023 00:38:25 -0300
+
+python-ansible-compat (4.1.2-1) unstable; urgency=medium
+
+  * New upstream version 4.1.2
+
+ -- Samuel Henrique <samueloph@debian.org>  Thu, 15 Jun 2023 23:32:05 +0100
+
+python-ansible-compat (3.0.1-1) unstable; urgency=medium
+
+  * New upstream version 3.0.1
+  * Bump Standards-Version to 4.6.2
+  * d/copyright: Remove entry for deleted file
+
+ -- Samuel Henrique <samueloph@debian.org>  Wed, 01 Feb 2023 23:37:23 +0000
+
+python-ansible-compat (2.2.7-1) unstable; urgency=medium
+
+  * New upstream version 2.2.7
+
+ -- Samuel Henrique <samueloph@debian.org>  Sat, 10 Dec 2022 22:11:15 +0000
+
+python-ansible-compat (2.2.5-1) unstable; urgency=medium
+
+  * New upstream version 2.2.5
+
+ -- Samuel Henrique <samueloph@debian.org>  Mon, 21 Nov 2022 19:32:04 +0000
+
+python-ansible-compat (2.2.4-1) unstable; urgency=medium
+
+  * New upstream version 2.2.4
+  * d/control: Add missing dependencies from setup.cfg
+
+ -- Samuel Henrique <samueloph@debian.org>  Tue, 01 Nov 2022 22:33:22 +0000
+
+python-ansible-compat (2.2.1-1) unstable; urgency=medium
+
+  * New upstream version 2.2.1
+
+ -- Samuel Henrique <samueloph@debian.org>  Mon, 26 Sep 2022 18:28:21 +0100
+
+python-ansible-compat (2.2.0-2) unstable; urgency=medium
+
+  * debian/watch: fix url to https://github.com/ansible/ansible-compat/tags
+  * debian/control: Bumped Standards-Version to 4.6.1
+
+ -- Josenilson Ferreira da Silva <nilsonfsilva@hotmail.com>  Sun, 18 Sep 2022 14:21:18 -0300
+
+python-ansible-compat (2.2.0-1) unstable; urgency=medium
+
+  * Team upload
+  * New upstream version 2.2.0
+  * debian/gbp.conf: Added gbp.conf
+  * debian/changelog: Added jsonschema to build-depends
+  * debian/copyright: Added new entry for debian files
+
+ -- suman rajan <suman@cryptolab.net>  Wed, 20 Jul 2022 15:58:41 +0200
+
+python-ansible-compat (2.1.0-2) unstable; urgency=medium
+
+  * Unstable upload to unblock ansible-lint.
+
+ -- Samuel Henrique <samueloph@debian.org>  Sun, 29 May 2022 12:41:00 +0100
+
+python-ansible-compat (2.1.0-1) experimental; urgency=medium
+
+  * Initial release (Closes: #1010416)
+
+ -- Josenilson Ferreira da Silva <nilsonfsilva@hotmail.com>  Tue, 10 May 2022 22:15:12 -0300

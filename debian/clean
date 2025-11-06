@@ -1,0 +1,2 @@
+src/ansible_compat.egg-info/*
+src/ansible_compat/_version.py
