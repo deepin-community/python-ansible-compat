@@ -3,12 +3,10 @@
 
 # Ansible requires the locale encoding to be UTF-8
 export LC_ALL=C.UTF-8
+export ANSIBLE_COLLECTIONS_PATH=/tmp/ansible_collections
 
 # Copy the "examples" directory into the build directory to prevent some tests
 # from failing and clean it up when dh_auto_test ends
-#!/usr/bin/make -f
-
-export ANSIBLE_COLLECTIONS_PATH=/tmp/ansible_collections
 export PYBUILD_BEFORE_TEST=cp -r {dir}/examples {build_dir}/
 export PYBUILD_AFTER_TEST=rm -rf {build_dir}/examples
 
@@ -16,14 +14,10 @@ export PYBUILD_AFTER_TEST=rm -rf {build_dir}/examples
 TEST_TO_SKIP="not test_prepare_environment_with_collections       \
               and not test_prerun_reqs_v1                         \
               and not test_prerun_reqs_v2                         \
-              and not test_install_collection_from_disk[deep]     \
-              and not test_install_collection_from_disk[normal]   \
-              and not test_install_collection_git                 \
               and not test_load_plugins[modules]                  \
               and not test_require_collection_install             \
               and not test_require_collection_no_cache_dir        \
               and not test_runtime_has_playbook                   \
-              and not test_scan_sys_path[scanT-raises_not_foundF] \
               and not test_get_cache_dir_isolation_no_venv_root   \
               and not test_runtime_plugins                        \
               and not test_scan_sys_path[disabled]                \
@@ -32,8 +26,8 @@ TEST_TO_SKIP="not test_prepare_environment_with_collections       \
               and not test_install_collection                     \
               and not test_upgrade_collection                     \
               and not test_require_collection_not_isolated        \
-              and not test_runtime_example                        \
-              and not test_scan_sys_path[scanF-raises_not_foundT]"
+              and not test_ro_venv                                \
+              and not test_runtime_example"
 export PYBUILD_TEST_ARGS=-k ${TEST_TO_SKIP}
 
 %:
