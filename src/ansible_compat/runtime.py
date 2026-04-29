@@ -230,11 +230,13 @@ class Runtime:
         from ansible.utils.display import Display
 
         # pylint: disable=unused-argument
-        def warning(
+        def warning(  # noqa: DOC103
             self: Display,  # noqa: ARG001
             msg: str,
+            formatted: bool = False,  # noqa: ARG001,FBT001,FBT002
             *,
-            formatted: bool = False,  # noqa: ARG001
+            help_text: str | None = None,  # noqa: ARG001
+            obj: Any = None,  # noqa: ARG001,ANN401
         ) -> None:  # pragma: no cover
             """Override ansible.utils.display.Display.warning to avoid printing warnings."""
             warnings.warn(
@@ -270,6 +272,7 @@ class Runtime:
           ansible-core and ade behavior and trick ansible-galaxy to install
           default to the venv site-packages location (isolation).
         """
+        # ansible-core normal precedence is: adjacent, local paths, configured paths, site paths
         collections_paths: list[str] = self.config.collections_paths.copy()
         if self.config.collections_scan_sys_path:
             for path in sys.path:
@@ -280,19 +283,17 @@ class Runtime:
                     collections_paths.append(  # pylint: disable=E1101
                         path,
                     )
-            # When inside a venv, we also add the site-packages to the top of the
-            # collections path because this is the first place where ansible-core
+            # When inside a venv, we also add the site-packages to the end of the
+            # collections path because this is the last place where ansible-core
             # will look for them. This also ensures that when calling ansible-galaxy
-            # to install content, it will be installed in the venv site-packages instead
-            # of altering the user configuration. Matches behavior of ADE and
-            # ensures isolation.
+            # to install content.
             for path in reversed(site.getsitepackages()):
                 if path not in collections_paths:
-                    collections_paths.insert(0, path)
+                    collections_paths.append(path)
 
             if collections_paths != self.config.collections_paths:
                 _logger.info(
-                    "Collection paths was patch to include extra directories %s",
+                    "Collection paths was patched to include extra directories %s",
                     ",".join(collections_paths),
                 )
         else:
@@ -661,7 +662,7 @@ class Runtime:
         role_name_check: int = 0,
     ) -> None:
         """Make dependencies available if needed."""
-        destination: Path | None = None
+        destination: Path = self.cache_dir / "collections"
         if required_collections is None:
             required_collections = {}
 
@@ -695,7 +696,6 @@ class Runtime:
                             destination=destination,
                         )
 
-        destination = self.cache_dir / "collections"
         for name, min_version in required_collections.items():
             self.install_collection(
                 f"{name}:>={min_version}",
@@ -704,22 +704,21 @@ class Runtime:
 
         galaxy_path = self.project_dir / "galaxy.yml"
         if (galaxy_path).exists():
-            if destination:
-                # while function can return None, that would not break the logic
-                colpath = Path(
-                    f"{destination}/ansible_collections/{colpath_from_path(self.project_dir)}",
-                )
-                if colpath.is_symlink():
-                    if os.path.realpath(colpath) == str(Path.cwd()):
-                        _logger.warning(
-                            "Found symlinked collection, skipping its installation.",
-                        )
-                        return
+            # while function can return None, that would not break the logic
+            colpath = Path(
+                f"{destination}/ansible_collections/{colpath_from_path(self.project_dir)}",
+            )
+            if colpath.is_symlink():
+                if os.path.realpath(colpath) == str(Path.cwd()):
                     _logger.warning(
-                        "Collection is symlinked, but not pointing to %s directory, so we will remove it.",
-                        Path.cwd(),
+                        "Found symlinked collection, skipping its installation.",
                     )
-                    colpath.unlink()
+                    return
+                _logger.warning(
+                    "Collection is symlinked, but not pointing to %s directory, so we will remove it.",
+                    Path.cwd(),
+                )
+                colpath.unlink()
 
             # molecule scenario within a collection
             self.install_collection_from_disk(
