@@ -11,20 +11,20 @@ import logging
 import os
 import re
 import shutil
-import subprocess
+import site
+import subprocess  # noqa: S404
 import sys
 import warnings
 from collections import OrderedDict
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, no_type_check
+from typing import TYPE_CHECKING, Any, no_type_check
 
 import subprocess_tee
 from packaging.version import Version
 
 from ansible_compat.config import (
     AnsibleConfig,
-    ansible_collections_path,
     parse_ansible_version,
 )
 from ansible_compat.constants import (
@@ -46,14 +46,15 @@ if TYPE_CHECKING:  # pragma: no cover
     # https://github.com/PyCQA/pylint/issues/3240
     # pylint: disable=unsubscriptable-object
     CompletedProcess = subprocess.CompletedProcess[Any]
+    from collections.abc import Callable
 else:
     CompletedProcess = subprocess.CompletedProcess
 
 
 _logger = logging.getLogger(__name__)
 # regex to extract the first version from a collection range specifier
-version_re = re.compile(":[>=<]*([^,]*)")
-namespace_re = re.compile("^[a-z][a-z0-9_]+$")
+version_re = re.compile(r":[>=<]*([^,]*)")
+namespace_re = re.compile(r"^[a-z][a-z0-9_]+$")
 
 
 class AnsibleWarning(Warning):
@@ -149,7 +150,7 @@ class Runtime:
 
     _version: Version | None = None
     collections: OrderedDict[str, Collection] = OrderedDict()
-    cache_dir: Path | None = None
+    cache_dir: Path
     # Used to track if we have already initialized the Ansible runtime as attempts
     # to do it multiple tilmes will cause runtime warnings from within ansible-core
     initialized: bool = False
@@ -194,6 +195,9 @@ class Runtime:
         self.isolated = isolated
         self.max_retries = max_retries
         self.environ = environ or os.environ.copy()
+        if "ANSIBLE_COLLECTIONS_PATHS" in self.environ:
+            msg = "ANSIBLE_COLLECTIONS_PATHS was detected, replace it with ANSIBLE_COLLECTIONS_PATH to continue."
+            raise RuntimeError(msg)
         self.plugins = Plugins(runtime=self)
         self.verbosity = verbosity
 
@@ -208,12 +212,12 @@ class Runtime:
         if "PYTHONWARNINGS" not in self.environ:  # pragma: no cover
             self.environ["PYTHONWARNINGS"] = "ignore:Blowfish has been deprecated"
 
-        if isolated:
-            self.cache_dir = get_cache_dir(self.project_dir)
+        self.cache_dir = get_cache_dir(self.project_dir, isolated=self.isolated)
+
         self.config = AnsibleConfig(cache_dir=self.cache_dir)
 
         # Add the sys.path to the collection paths if not isolated
-        self._add_sys_path_to_collection_paths()
+        self._patch_collection_paths()
 
         if not self.version_in_range(lower=min_required_version):
             msg = f"Found incompatible version of ansible runtime {self.version}, instead of {min_required_version} or newer."
@@ -243,7 +247,7 @@ class Runtime:
         # Monkey patch ansible warning in order to use warnings module.
         Display.warning = warning
 
-    def initialize_logger(self, level: int = 0) -> None:
+    def initialize_logger(self, level: int = 0) -> None:  # noqa: PLR6301
         """Set up the global logging level based on the verbosity number."""
         verbosity_map = {
             -2: logging.CRITICAL,
@@ -258,17 +262,43 @@ class Runtime:
         # Use module-level _logger instance to validate it
         _logger.debug("Logging initialized to level %s", logging_level)
 
-    def _add_sys_path_to_collection_paths(self) -> None:
-        """Add the sys.path to the collection paths."""
+    def _patch_collection_paths(self) -> None:
+        """Modify Ansible collection path for testing purposes.
+
+        - Add the sys.path to the end of collection paths.
+        - Add the site-packages to the beginning of collection paths to match
+          ansible-core and ade behavior and trick ansible-galaxy to install
+          default to the venv site-packages location (isolation).
+        """
+        collections_paths: list[str] = self.config.collections_paths.copy()
         if self.config.collections_scan_sys_path:
             for path in sys.path:
                 if (
-                    path not in self.config.collections_paths
+                    path not in collections_paths
                     and (Path(path) / "ansible_collections").is_dir()
                 ):
-                    self.config.collections_paths.append(  # pylint: disable=E1101
+                    collections_paths.append(  # pylint: disable=E1101
                         path,
                     )
+            # When inside a venv, we also add the site-packages to the top of the
+            # collections path because this is the first place where ansible-core
+            # will look for them. This also ensures that when calling ansible-galaxy
+            # to install content, it will be installed in the venv site-packages instead
+            # of altering the user configuration. Matches behavior of ADE and
+            # ensures isolation.
+            for path in reversed(site.getsitepackages()):
+                if path not in collections_paths:
+                    collections_paths.insert(0, path)
+
+            if collections_paths != self.config.collections_paths:
+                _logger.info(
+                    "Collection paths was patch to include extra directories %s",
+                    ",".join(collections_paths),
+                )
+        else:
+            msg = "ANSIBLE_COLLECTIONS_SCAN_SYS_PATH is disabled, not patching collection paths. This may lead to unexpected behavior when using dev tools and prevent full isolation from user environment."
+            _logger.warning(msg)
+        self.config.collections_paths = collections_paths
 
     def load_collections(self) -> None:
         """Load collection data."""
@@ -312,7 +342,7 @@ class Runtime:
 
                 if collection in self.collections:
                     msg = f"Another version of '{collection}' {collection_info['version']} was found installed in {path}, only the first one will be used, {self.collections[collection].version} ({self.collections[collection].path})."
-                    logging.warning(msg)
+                    _logger.warning(msg)
                 else:
                     self.collections[collection] = Collection(
                         name=collection,
@@ -337,39 +367,25 @@ class Runtime:
             msg = f"Ansible CLI ({self.version}) and python module ({ansible_module_version}) versions do not match. This indicates a broken execution environment."
             raise RuntimeError(msg)
 
-        # For ansible 2.15+ we need to initialize the plugin loader
+        # We need to initialize the plugin loader
         # https://github.com/ansible/ansible-lint/issues/2945
         if not Runtime.initialized:
             col_path = [f"{self.cache_dir}/collections"]
             # noinspection PyProtectedMember
+            # pylint: disable=import-outside-toplevel,no-name-in-module
+            from ansible.plugins.loader import init_plugin_loader
             from ansible.utils.collection_loader._collection_finder import (  # pylint: disable=import-outside-toplevel
-                _AnsibleCollectionFinder,
+                _AnsibleCollectionFinder,  # noqa: PLC2701
             )
 
-            if self.version >= Version("2.15.0.dev0"):
-                # pylint: disable=import-outside-toplevel,no-name-in-module
-                from ansible.plugins.loader import init_plugin_loader
-
-                _AnsibleCollectionFinder(  # noqa: SLF001
-                    paths=col_path,
-                )._remove()  # pylint: disable=protected-access
-                init_plugin_loader(col_path)
-            else:
-                # noinspection PyProtectedMember
-                # pylint: disable=protected-access
-                col_path += self.config.collections_paths
-                col_path += os.path.dirname(  # noqa: PTH120
-                    os.environ.get(ansible_collections_path(), "."),
-                ).split(":")
-                _AnsibleCollectionFinder(  # noqa: SLF001
-                    paths=col_path,
-                )._install()  # pylint: disable=protected-access
-            Runtime.initialized = True
+            _AnsibleCollectionFinder(  # noqa: SLF001
+                paths=col_path,
+            )._remove()  # pylint: disable=protected-access
+            init_plugin_loader(col_path)
 
     def clean(self) -> None:
         """Remove content of cache_dir."""
-        if self.cache_dir:
-            shutil.rmtree(self.cache_dir, ignore_errors=True)
+        shutil.rmtree(self.cache_dir, ignore_errors=True)
 
     def run(  # ruff: disable=PLR0913
         self,
@@ -472,7 +488,7 @@ class Runtime:
             if not basedir:
                 basedir = Path()
             msg = f"has_playbook returned false for '{basedir / playbook}' due to syntax check returning {proc.returncode}"
-            logging.debug(msg)
+            _logger.debug(msg)
 
         # cache the result
         self._has_playbook_cache[playbook, basedir] = result
@@ -518,7 +534,7 @@ class Runtime:
         cpaths: list[str] = self.config.collections_paths
         if destination and str(destination) not in cpaths:
             # we cannot use '-p' because it breaks galaxy ability to ignore already installed collections, so
-            # we hack ansible_collections_path instead and inject our own path there.
+            # we hack ANSIBLE_COLLECTIONS_PATH instead and inject our own path there.
             # pylint: disable=no-member
             cpaths.insert(0, str(destination))
         cmd.append(f"{collection}")
@@ -527,7 +543,7 @@ class Runtime:
         process = self.run(
             cmd,
             retry=True,
-            env={**self.environ, ansible_collections_path(): ":".join(cpaths)},
+            env={**self.environ, "ANSIBLE_COLLECTIONS_PATH": ":".join(cpaths)},
         )
         if process.returncode != 0:
             msg = f"Command {' '.join(cmd)}, returned {process.returncode} code:\n{process.stdout}\n{process.stderr}"
@@ -559,13 +575,13 @@ class Runtime:
         if not Path(requirement).exists():
             return
         reqs_yaml = yaml_from_file(Path(requirement))
-        if not isinstance(reqs_yaml, (dict, list)):
+        if not isinstance(reqs_yaml, dict | list):
             msg = f"{requirement} file is not a valid Ansible requirements file."
             raise InvalidPrerequisiteError(msg)
 
         if isinstance(reqs_yaml, dict):
             for key in reqs_yaml:
-                if key not in ("roles", "collections"):
+                if key not in {"roles", "collections"}:
                     msg = f"{requirement} file is not a valid Ansible requirements file. Only 'roles' and 'collections' keys are allowed at root level. Recognized valid locations are: {', '.join(REQUIREMENT_LOCATIONS)}"
                     raise InvalidPrerequisiteError(msg)
 
@@ -579,8 +595,7 @@ class Runtime:
             ]
             if self.verbosity > 0:
                 cmd.extend(["-" + ("v" * self.verbosity)])
-            if self.cache_dir:
-                cmd.extend(["--roles-path", f"{self.cache_dir}/roles"])
+            cmd.extend(["--roles-path", f"{self.cache_dir}/roles"])
 
             if offline:
                 _logger.warning(
@@ -596,7 +611,11 @@ class Runtime:
                     raise AnsibleCommandError(result)
 
         # Run galaxy collection install works on v2 requirements.yml
-        if "collections" in reqs_yaml and reqs_yaml["collections"] is not None:
+        if (
+            isinstance(reqs_yaml, dict)
+            and "collections" in reqs_yaml
+            and reqs_yaml["collections"] is not None
+        ):
             cmd = [
                 "ansible-galaxy",
                 "collection",
@@ -660,11 +679,10 @@ class Runtime:
         if not install_local:
             return
 
-        for gpath in search_galaxy_paths(self.project_dir):
+        for item in search_galaxy_paths(self.project_dir):
             # processing all found galaxy.yml files
-            galaxy_path = Path(gpath)
-            if galaxy_path.exists():
-                data = yaml_from_file(galaxy_path)
+            if item.exists():
+                data = yaml_from_file(item)
                 if isinstance(data, dict) and "dependencies" in data:
                     for name, required_version in data["dependencies"].items():
                         _logger.info(
@@ -677,15 +695,15 @@ class Runtime:
                             destination=destination,
                         )
 
-        if self.cache_dir:
-            destination = self.cache_dir / "collections"
+        destination = self.cache_dir / "collections"
         for name, min_version in required_collections.items():
             self.install_collection(
                 f"{name}:>={min_version}",
                 destination=destination,
             )
 
-        if (self.project_dir / "galaxy.yml").exists():
+        galaxy_path = self.project_dir / "galaxy.yml"
+        if (galaxy_path).exists():
             if destination:
                 # while function can return None, that would not break the logic
                 colpath = Path(
@@ -737,10 +755,13 @@ class Runtime:
         In the future this method may attempt to install a missing or outdated
         collection before failing.
 
-        :param name: collection name
-        :param version: minimal version required
-        :param install: if True, attempt to install a missing collection
-        :returns: tuple of (found_version, collection_path)
+        Args:
+            name: collection name
+            version: minimal version required
+            install: if True, attempt to install a missing collection
+
+        Returns:
+            tuple of (found_version, collection_path)
         """
         try:
             ns, coll = name.split(".", 1)
@@ -830,7 +851,7 @@ class Runtime:
         if library_paths != self.config.DEFAULT_MODULE_PATH:
             self._update_env("ANSIBLE_LIBRARY", library_paths)
         if collections_path != self.config.default_collections_path:
-            self._update_env(ansible_collections_path(), collections_path)
+            self._update_env("ANSIBLE_COLLECTIONS_PATH", collections_path)
         if roles_path != self.config.default_roles_path:
             self._update_env("ANSIBLE_ROLES_PATH", roles_path)
 
@@ -842,10 +863,7 @@ class Runtime:
         not mentioned or set to `False`, it returns the first path in
         `default_roles_path`.
         """
-        if self.cache_dir:
-            path = Path(f"{self.cache_dir}/roles")
-        else:
-            path = Path(self.config.default_roles_path[0]).expanduser()
+        path = Path(f"{self.cache_dir}/roles")
         return path
 
     def _install_galaxy_role(
@@ -857,14 +875,16 @@ class Runtime:
     ) -> None:
         """Detect standalone galaxy role and installs it.
 
-        :param: role_name_check: logic to used to check role name
-            0: exit with error if name is not compliant (default)
-            1: warn if name is not compliant
-            2: bypass any name checking
+        Args:
+            project_dir: path to the role
+            role_name_check: logic to used to check role name
+                0: exit with error if name is not compliant (default)
+                1: warn if name is not compliant
+                2: bypass any name checking
 
-        :param: ignore_errors: if True, bypass installing invalid roles.
+            ignore_errors: if True, bypass installing invalid roles.
 
-        Our implementation aims to match ansible-galaxy's behaviour for installing
+        Our implementation aims to match ansible-galaxy's behavior for installing
         roles from a tarball or scm. For example ansible-galaxy will install a role
         that has both galaxy.yml and meta/main.yml present but empty. Also missing
         galaxy.yml is accepted but missing meta/main.yml is not.
@@ -888,7 +908,7 @@ class Runtime:
 
         fqrn = _get_role_fqrn(galaxy_info, project_dir)
 
-        if role_name_check in [0, 1]:
+        if role_name_check in {0, 1}:
             if not re.match(r"[a-z0-9][a-z0-9_-]+\.[a-z][a-z0-9_]+$", fqrn):
                 msg = MSG_INVALID_FQRL.format(fqrn)
                 if role_name_check == 1:
@@ -979,20 +999,27 @@ def _get_galaxy_role_name(galaxy_infos: dict[str, Any]) -> str:
     return result
 
 
-def search_galaxy_paths(search_dir: Path) -> list[str]:
-    """Search for galaxy paths (only one level deep)."""
-    galaxy_paths: list[str] = []
-    for file in [".", *os.listdir(search_dir)]:
+def search_galaxy_paths(search_dir: Path) -> list[Path]:
+    """Search for galaxy paths (only one level deep).
+
+    Returns:
+        list[Path]: List of galaxy.yml found.
+    """
+    galaxy_paths: list[Path] = []
+    for item in [Path(), *search_dir.iterdir()]:
         # We ignore any folders that are not valid namespaces, just like
         # ansible galaxy does at this moment.
-        if file != "." and not namespace_re.match(file):
+        file_path = item.resolve()
+        if file_path.is_file() and file_path.name == "galaxy.yml":
+            galaxy_paths.append(file_path)
             continue
-        file_path = search_dir / file / "galaxy.yml"
-        if file_path.is_file():
-            galaxy_paths.append(str(file_path))
+        if file_path.is_dir() and namespace_re.match(file_path.name):
+            file_path /= "galaxy.yml"
+            if file_path.exists():
+                galaxy_paths.append(file_path)
     return galaxy_paths
 
 
 def is_url(name: str) -> bool:
     """Return True if a dependency name looks like an URL."""
-    return bool(re.match("^git[+@]", name))
+    return bool(re.match(r"^git[+@]", name))

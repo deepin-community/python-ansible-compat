@@ -1,3 +1,17 @@
+python-ansible-compat (25.1.1-1) unstable; urgency=medium
+
+  [ Vincent Blut ]
+  * Re-enable upstream test suite
+
+  [ Josenilson Ferreira da Silva ]
+  * New upstream version 25.1.1
+  * debian/control:
+     - Added Build-depends 'python3-pytest-instafail' needed for tests
+  * debian/rules:
+     - Skipped tests due to implementation error
+
+ -- Josenilson Ferreira da Silva <nilsonfsilva@hotmail.com>  Wed, 29 Jan 2025 21:52:37 -0300
+
 python-ansible-compat (24.10.0-1) unstable; urgency=medium
 
   * New upstream version 24.10.0

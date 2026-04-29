@@ -5,9 +5,8 @@ import json
 import pathlib
 import subprocess
 import sys
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from pathlib import Path
-from typing import Callable
 
 import pytest
 
@@ -123,6 +122,6 @@ def venv_module(tmp_path_factory: pytest.TempPathFactory) -> VirtualEnvironment:
     :return: VirtualEnvironment instance
     """
     test_project = tmp_path_factory.mktemp(basename="test_project-", numbered=True)
-    _venv = VirtualEnvironment(test_project)
-    _venv.create()
-    return _venv
+    venv_ = VirtualEnvironment(test_project)
+    venv_.create()
+    return venv_

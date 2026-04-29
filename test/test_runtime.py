@@ -71,7 +71,7 @@ def test_runtime_missing_ansible_module(monkeypatch: MonkeyPatch) -> None:
 
     monkeypatch.setattr("importlib.import_module", RaiseException)
 
-    with pytest.raises(RuntimeError, match="Unable to find Ansible python module."):
+    with pytest.raises(RuntimeError, match=r"Unable to find Ansible python module."):
         Runtime(require_module=True)
 
 
@@ -130,7 +130,7 @@ def test_runtime_version_fail_cli(mocker: MockerFixture) -> None:
     runtime = Runtime()
     with pytest.raises(
         RuntimeError,
-        match="Unable to find a working copy of ansible executable.",
+        match=r"Unable to find a working copy of ansible executable.",
     ):
         _ = runtime.version  # pylint: disable=pointless-statement
 
@@ -175,11 +175,6 @@ def test_runtime_install_role(
             f"{Path(runtime.config.default_roles_path[0]).expanduser()}/{role_name}",
         ).is_symlink()
     runtime.clean()
-    # also test that clean does not break when cache_dir is missing
-    tmp_dir = runtime.cache_dir
-    runtime.cache_dir = None
-    runtime.clean()
-    runtime.cache_dir = tmp_dir
 
 
 def test_prepare_environment_with_collections(runtime_tmp: Runtime) -> None:
@@ -406,7 +401,7 @@ def test__update_env(
 
 def test_require_collection_wrong_version(runtime: Runtime) -> None:
     """Tests behaviour of require_collection."""
-    subprocess.check_output(  # noqa: S603
+    subprocess.check_output(
         [
             "ansible-galaxy",
             "collection",
@@ -446,7 +441,7 @@ def test_require_collection_preexisting_broken(runtime_tmp: Runtime) -> None:
     dest_path: str = runtime_tmp.config.collections_paths[0]
     dest = pathlib.Path(dest_path) / "ansible_collections" / "foo" / "bar"
     dest.mkdir(parents=True, exist_ok=True)
-    with pytest.raises(InvalidPrerequisiteError, match="missing MANIFEST.json"):
+    with pytest.raises(InvalidPrerequisiteError, match=r"missing MANIFEST.json"):
         runtime_tmp.require_collection("foo.bar")
 
 
@@ -570,6 +565,7 @@ def test_install_galaxy_role_bad_namespace(runtime_tmp: Runtime) -> None:
   author: bar
   namespace: ["xxx"]
 """,
+        encoding="utf-8",
     )
     # this should raise an error regardless the role_name_check value
     with pytest.raises(AnsibleCompatError, match="Role namespace must be string, not"):
@@ -628,6 +624,7 @@ def test_install_galaxy_role_no_checks(runtime_tmp: Runtime) -> None:
   author: bar
   namespace: acme
 """,
+        encoding="utf-8",
     )
     runtime_tmp._install_galaxy_role(runtime_tmp.project_dir, role_name_check=2)
     result = runtime_tmp.run(["ansible-galaxy", "list"])
@@ -644,7 +641,7 @@ def test_upgrade_collection(runtime_tmp: Runtime) -> None:
     runtime_tmp.install_collection("examples/reqs_v2/community-molecule-0.1.0.tar.gz")
     with pytest.raises(
         InvalidPrerequisiteError,
-        match="Found community.molecule collection 0.1.0 but 9.9.9 or newer is required.",
+        match=r"Found community.molecule collection 0.1.0 but 9.9.9 or newer is required.",
     ):
         # we check that when install=False, we raise error
         runtime_tmp.require_collection("community.molecule", "9.9.9", install=False)
@@ -652,10 +649,9 @@ def test_upgrade_collection(runtime_tmp: Runtime) -> None:
     runtime_tmp.require_collection("community.molecule", "0.1.0")
 
 
-def test_require_collection_no_cache_dir() -> None:
+def test_require_collection_not_isolated() -> None:
     """Check require_collection without a cache directory."""
-    runtime = Runtime()
-    assert not runtime.cache_dir
+    runtime = Runtime(isolated=False)
     runtime.require_collection("community.molecule", "0.1.0", install=True)
 
 
@@ -788,12 +784,12 @@ def test_install_collection_from_disk_fail() -> None:
             runtime.prepare_environment(install_local=True)
         # based on version of Ansible used, we might get a different error,
         # but both errors should be considered acceptable
-        assert exc_info.type in (
+        assert exc_info.type in {
             RuntimeError,
             AnsibleCompatError,
             AnsibleCommandError,
             InvalidPrerequisiteError,
-        )
+        }
         assert exc_info.match(
             "(is missing the following mandatory|Got 1 exit code while running: ansible-galaxy collection build)",
         )
@@ -937,25 +933,25 @@ def test_runtime_plugins(runtime: Runtime) -> None:
     ("path", "result"),
     (
         pytest.param(
-            "test/assets/galaxy_paths",
-            ["test/assets/galaxy_paths/foo/galaxy.yml"],
+            Path("test/assets/galaxy_paths"),
+            [Path("test/assets/galaxy_paths/foo/galaxy.yml").resolve()],
             id="1",
         ),
         pytest.param(
-            "test/collections",
+            Path("test/collections"),
             [],  # should find nothing because these folders are not valid namespaces
             id="2",
         ),
         pytest.param(
-            "test/assets/galaxy_paths/foo",
-            ["test/assets/galaxy_paths/foo/galaxy.yml"],
+            Path("test/assets/galaxy_paths/foo"),
+            [Path("test/assets/galaxy_paths/foo/galaxy.yml").resolve()],
             id="3",
         ),
     ),
 )
-def test_galaxy_path(path: str, result: list[str]) -> None:
+def test_galaxy_path(path: Path, result: list[Path]) -> None:
     """Check behavior of galaxy path search."""
-    assert search_galaxy_paths(Path(path)) == result
+    assert search_galaxy_paths(path) == result
 
 
 @pytest.mark.parametrize(
@@ -1015,12 +1011,17 @@ def test_get_galaxy_role_name_invalid() -> None:
     galaxy_infos = {
         "role_name": False,  # <-- invalid data, should be string
     }
-    assert _get_galaxy_role_name(galaxy_infos) == ""
+    assert not _get_galaxy_role_name(galaxy_infos)
 
 
 def test_runtime_has_playbook() -> None:
     """Tests has_playbook method."""
     runtime = Runtime(require_module=True)
+
+    runtime.prepare_environment(
+        required_collections={"community.molecule": "0.1.0"},
+        install_local=True,
+    )
 
     assert not runtime.has_playbook("this-does-not-exist.yml")
     # call twice to ensure cache is used:
@@ -1029,3 +1030,13 @@ def test_runtime_has_playbook() -> None:
     assert not runtime.has_playbook("this-does-not-exist.yml", basedir=Path())
     # this is part of community.molecule collection
     assert runtime.has_playbook("community.molecule.validate.yml")
+
+
+def test_runtime_exception(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Asserts that we raise a runtime exception if unsupported environment variable is detected."""
+    monkeypatch.setenv("ANSIBLE_COLLECTIONS_PATHS", "foo")
+    with pytest.raises(
+        RuntimeError,
+        match=r"ANSIBLE_COLLECTIONS_PATHS was detected, replace it with ANSIBLE_COLLECTIONS_PATH to continue.",
+    ):
+        Runtime()

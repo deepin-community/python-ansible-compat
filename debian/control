@@ -4,6 +4,7 @@ Priority: optional
 Maintainer: Debian Python Team <team+python@tracker.debian.org>
 Uploaders: Josenilson Ferreira da Silva <nilsonfsilva@hotmail.com>, Samuel Henrique <samueloph@debian.org>
 Build-Depends: debhelper-compat (= 13),
+               ansible-core <!nocheck>,
                dh-python,
                python3-setuptools,
                python3,
@@ -11,6 +12,9 @@ Build-Depends: debhelper-compat (= 13),
                python3-setuptools-scm,
                python3-jsonschema (>= 4.6.0),
                python3-packaging,
+               python3-pytest <!nocheck>,
+               python3-pytest-instafail <!nocheck>,
+               python3-pytest-mock <!nocheck>,
                python3-yaml,
                python3-subprocess-tee,
 Standards-Version: 4.7.0
